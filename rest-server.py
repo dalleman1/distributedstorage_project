@@ -6,6 +6,7 @@ import io
 import logging
 from uuid import uuid4
 import messages_pb2
+from utils import is_raspberry_pi
 
 # Number replicas to create
 NUM_REPLICAS = 1
@@ -24,19 +25,26 @@ def close_db(e=None):
         db.close()
 
 
+if is_raspberry_pi():
+    server_address = input('Server address: 192.168.0.___')
+    pull_address = f'tcp://192.168.0.{server_address}:5557'
+    push_address = f'tcp://192.168.0.{server_address}:5558'
+    subscriber_address = f'tcp://192.168.0.{server_address}:5559'
+
+
 context = zmq.Context()
 
 # Socket to send tasks to Storage Nodes
 send_task_socket = context.socket(zmq.PUSH)
-send_task_socket.bind("tcp://*:5557")
+send_task_socket.bind(pull_address)
 
 # Socket to receive messages from Storage Nodes
 response_socket = context.socket(zmq.PULL)
-response_socket.bind("tcp://*:5558")
+response_socket.bind(push_address)
 
 # Publisher socket for data request broadcasts
 data_req_socket = context.socket(zmq.PUB)
-data_req_socket.bind("tcp://*:5559")
+data_req_socket.bind(subscriber_address)
 
 # Wait for all workers to start and connect.
 time.sleep(1)
@@ -147,4 +155,4 @@ def add_files():
 if __name__ == "__main__":
     host_local_computer = "localhost"
     host_local_network = "0.0.0.0"
-    app.run(host=host_local_computer, port=9000)
+    app.run(host="192.168.0.101", port=9000)
