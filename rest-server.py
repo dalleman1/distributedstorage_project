@@ -1,4 +1,4 @@
-from flask import Flask, make_response, g, request
+from flask import Flask, make_response, send_file, g, request
 import sqlite3
 import zmq
 import time
@@ -86,8 +86,7 @@ def download_file(file_id):
     # File data is in the 2nd frame of the message
     data = result[1]
 
-    # return make_response(io.BytesIO(data), mimetype=res['content_type'])
-    return make_response({'Hello': res}, 200)
+    return send_file(io.BytesIO(data), mimetype=res['content_type'])
 
 
 @app.route("/files/<int:file_id>", methods=["DELETE"])

@@ -71,5 +71,17 @@ while True:
         sender.send_string(f'{storage_node_id}: saved the file')
     
     if subscriber in sockets:
-        pass
+        
+        msg = subscriber.recv()
 
+        task = messages_pb2.getdata_request()
+        task.ParseFromString(msg)
+
+        filename = task.filename
+        filename += '.bin'
+
+        try:
+            with open(os.path.join(data_folder, filename), 'rb') as f:
+                sender.send_multipart([bytes(filename, 'utf-8'), f.read()])
+        except FileNotFoundError:
+            pass
