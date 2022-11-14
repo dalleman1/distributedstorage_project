@@ -72,3 +72,4 @@ while True:
     
     if subscriber in sockets:
         pass
+
