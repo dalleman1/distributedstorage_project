@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+message node_init
+{
+    string port = 1;
+}
+message send_data_request
+{
+    string filename = 1;
+    int32 num_rep = 2;
+    string node_list = 3;
+}
+message recv_data_request
+{
+    string filename = 1;
+}
