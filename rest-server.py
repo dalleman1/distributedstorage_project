@@ -2,11 +2,20 @@ from flask import Flask, make_response, send_file, g, request
 import sqlite3
 import zmq
 import time
+import sys
+
 import io
 import logging
+import os
 from uuid import uuid4
 import messages_pb2
 from utils import is_raspberry_pi
+
+
+
+f = open(os.path.join(sys.path[0], 'times.txt'), 'a+')
+#f.write("{0}\n".format(sec))
+f.close()
 
 # Number replicas to create
 NUM_REPLICAS = 1
@@ -24,6 +33,9 @@ def close_db(e=None):
     if db is not None:
         db.close()
 
+pull_address = 'tcp://*:5557'
+push_address = 'tcp://*:5558'
+subscriber_address = 'tcp://*:5559'
 
 if is_raspberry_pi():
     server_address = input('Server address: 192.168.0.___')
@@ -109,6 +121,8 @@ def delete_file(file_id):
 
 @app.route("/files", methods=["POST"])
 def add_files():
+    start_time = time.time()
+
     # Get payload from request
     # Add to db
     # Make copies to k storage nodes
@@ -122,6 +136,7 @@ def add_files():
     filename = file.filename
     content_type = file.mimetype
     
+    #do we need to read the file and not just send it forward?
     data = bytearray(file.read())
     size = len(data)
 
@@ -138,6 +153,7 @@ def add_files():
     # using the db index as a unique index
     task.filename = str(cursor.lastrowid)
 
+
     for idx in range(NUM_REPLICAS):
         send_task_socket.send_multipart([
             task.SerializeToString(),
@@ -148,6 +164,17 @@ def add_files():
         resp = response_socket.recv_string()
         logging.info(f'{idx}: {resp}')
 
+    end_time = time.time()
+
+    time_lapsed = end_time - start_time
+
+    f = open(os.path.join(sys.path[0], 'times.txt'), 'a+')
+
+    f.write("Size: {0}, Time: {1}\n".format(size,time_lapsed))
+    f.close()
+
+    print(time_lapsed)
+
     return make_response({"id": cursor.lastrowid}, 201)
 
 
@@ -155,4 +182,4 @@ def add_files():
 if __name__ == "__main__":
     host_local_computer = "localhost"
     host_local_network = "0.0.0.0"
-    app.run(host="192.168.0.101", port=9000)
+    app.run(host="localhost", port=9000)
