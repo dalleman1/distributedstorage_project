@@ -10,7 +10,12 @@ message send_data_request
     int32 num_rep = 2;
     string node_list = 3;
 }
-message recv_data_request
+message data_request
+{
+    string filename = 1;
+    string type = 2;
+}
+message retrieve_data_request
 {
     string filename = 1;
 }
