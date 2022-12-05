@@ -103,15 +103,12 @@ while True:
         task = messages_pb2.retrieve_data_request()
         task.ParseFromString(msg)
         
-        print(task)
-
         filename = task.filename.split(".")[0]
         filename += ".bin"
 
         # Checks if file exists
         if os.path.exists(os.path.join(data_folder, filename)):
             # Read file from local disk and send to lean-node
-            print(filename)
             try:
                 with open(os.path.join(data_folder, filename), "rb") as f:
                     send_file.send_multipart([bytes(filename, 'utf-8'), f.read()])

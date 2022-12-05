@@ -41,7 +41,7 @@ poller = zmq.Poller()
 poller.register(recv_nodes_socket)
 poller.register(recv_server)
 
-nodes = [5551, 5552, 5553]
+nodes = []
 
 while True:
     try: 
