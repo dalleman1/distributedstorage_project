@@ -7,7 +7,6 @@ import sys
 import io
 import logging
 import os
-from uuid import uuid4
 import messages_pb2
 from utils import is_raspberry_pi
 

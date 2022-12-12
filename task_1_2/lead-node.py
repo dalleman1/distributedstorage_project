@@ -94,7 +94,7 @@ while True:
             # Wait for response from a single node
             logging.info(f'Waiting for file "{task.filename}"')
             msg = recv_job_socket.recv_multipart()
-            print(msg[0])
+
             # Forwards to server 
             send_server.send(msg[0])
 

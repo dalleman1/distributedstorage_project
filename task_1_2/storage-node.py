@@ -9,7 +9,7 @@ import time
 import messages_pb2
 
 data_folder = sys.argv[1] if len(sys.argv) > 1 else "./"
-port = sys.argv[2] if len(sys.argv) > 1 else "5560"
+port = sys.argv[2] if len(sys.argv) > 1 else "5561"
 
 
 if data_folder != "./":    
@@ -52,8 +52,6 @@ send_file.connect(send_file_address)
 pair_socket = context.socket(zmq.PAIR)
 pair_socket.bind(f"tcp://*:{port}")
 
-pair_connection = context.socket(zmq.PAIR)
-
 # Send id to controller 
 idTask = messages_pb2.node_init()
 idTask.port = port
@@ -83,13 +81,12 @@ def send_to_other_node(task, data):
     else:
         pair_conn_addr = f"tcp://localhost:{node_port}"
 
-    pair_connection.connect(pair_conn_addr)
-
-    # Send to random node from node_list 
-    pair_connection.send_multipart([task.SerializeToString(), data])
-    msg = pair_connection.recv_string()
-    print(msg)
-    pair_connection.disconnect(pair_conn_addr)
+    with context.socket(zmq.PAIR) as conn:
+        conn.connect(pair_conn_addr)
+        # Send to random node from node_list
+        conn.send_multipart([task.SerializeToString(), data])
+        msg = conn.recv_string()
+        print(msg)
 
 while True:
     try:
@@ -111,7 +108,7 @@ while True:
             # Read file from local disk and send to lean-node
             try:
                 with open(os.path.join(data_folder, filename), "rb") as f:
-                    send_file.send_multipart([bytes(filename, 'utf-8'), f.read()])
+                    send_file.send(f.read())
             except FileNotFoundError:
                 print(f"Unable to open file: {filename}")
         else:
@@ -151,7 +148,7 @@ while True:
 
         data = msg[1]
 
-        logging.info(f"Filename: {filename} Size: {len(data)}")
+        print(f"Filename: {filename} Size: {len(data)}")
 
         with open(os.path.join("./", data_folder, filename), "wb") as f:
             f.write(data)
@@ -159,6 +156,8 @@ while True:
         pair_socket.send_string(f'File stored by node: {port}')
 
         if (task.num_rep - 1) > 0: 
+            print(f"Sending to next node. Number of replicas left: {task.num_rep -1}")
             send_to_other_node(task, data)
-
-        print(f"Sending to next replica. Number of replicas left: {task.num_rep}")
+        else:
+            print('No more replicas to make!')
+        
