@@ -19,7 +19,7 @@ f.close()
 
 # Number replicas to create
 NUM_REPLICAS = 1
-MAX_ERASURES = 1
+MAX_ERASURES = 2
 
 def get_db():
     if "db" not in g:
@@ -99,18 +99,18 @@ def download_file(file_id):
     task = messages_pb2.getdata_request()
     task.filename = str(file_id)
 
-    storage_details = json.loads(res["storage_details"])
+    storage_details = json.loads(res['storage_details'])
 
-    if res["storage_mode"] == "erasurecode_rs":
-        coded_fragments = storage_details["coded_fragments"]
-        max_erasures = storage_details["max_erasures"]
+    if res['storage_mode'] == 'erasurecode_rs':
+        coded_fragments = storage_details['code_fragments']
+        max_erasures = storage_details['max_erasures']
 
         file_data = reedsolomon.get_file(
             coded_fragments,
-            max_erasures,res["size"],
+            max_erasures,res['size'],
             data_req_socket,
             response_socket)
-        return send_file(io.BytesIO(file_data),mimetype=res["contents_type"])
+        return send_file(io.BytesIO(file_data),mimetype=res['content_type'])
 
     data_req_socket.send(task.SerializeToString())
 
@@ -192,7 +192,7 @@ def add_files():
     return make_response({"id": cursor.lastrowid}, 201)
 
 @app.route("/files/erasurecode_rs", methods=["POST"])
-def add_files():
+def add_files_rs():
     start_time = time.time()
     payload = request.form
 
@@ -214,22 +214,20 @@ def add_files():
     data = bytearray(file.read())
     size = len(data)
 
-    if storage_mode == "erasurecode_rs":
-        
+    if storage_mode == 'erasurecode_rs':
+        fragment_names = reedsolomon.store_file(data, MAX_ERASURES, send_task_socket,response_socket)
+        print("Using Erasurecode")
         storage_details = {
             "code_fragments": fragment_names,
             "max_erasures": MAX_ERASURES
         }
-        
-        fragment_names = reedsolomon.store_file(data, MAX_ERASURES, send_task_socket,response_socket)
 
         db = get_db()
         cursor = db.execute(
-            """INSERT INTO file(filename, size, content_type)
-            VALUES (?, ?, ?)""",
-            (fragment_names, size, "erasurecode_rs",json.dumps(storage_details))
-        )
-    elif storage_mode == "replication":
+        "INSERT INTO file(filename, size, content_type, storage_mode, storage_details) VALUES (?,?,?,?,?)",
+        (filename, size, content_type, storage_mode, json.dumps(storage_details))
+    )
+    else:
         db = get_db()
         cursor = db.execute(
             """INSERT INTO file(filename, size, content_type)
@@ -243,16 +241,16 @@ def add_files():
     # using the db index as a unique index
     task.filename = str(cursor.lastrowid)
 
+    
+    # for idx in range(MAX_ERASURES):
+    #     send_task_socket.send_multipart([
+    #         task.SerializeToString(),
+    #         data
+    #     ])
 
-    for idx in range(MAX_ERASURES):
-        send_task_socket.send_multipart([
-            task.SerializeToString(),
-            data
-        ])
-
-    for idx in range(MAX_ERASURES):
-        resp = response_socket.recv_string()
-        logging.info(f'{idx}: {resp}')
+    # for idx in range(MAX_ERASURES):
+    #     resp = response_socket.recv_string()
+    #     logging.info(f'{idx}: {resp}')
 
     end_time = time.time()
 

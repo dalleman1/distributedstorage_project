@@ -8,6 +8,8 @@ def create_database(cur: sqlite3.Cursor):
         filename TEXT,
         size INTEGER,
         content_type TEXT,
+        storage_mode TEXT,
+        storage_details TEXT,
         created DATETIME DEFAULT CURRENT_TIMESTAMP
     );"""
     )
