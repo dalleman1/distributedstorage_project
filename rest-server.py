@@ -18,8 +18,7 @@ f = open(os.path.join(sys.path[0], 'times.txt'), 'a+')
 f.close()
 
 # Number replicas to create
-NUM_REPLICAS = 1
-MAX_ERASURES = 2
+NUM_REPLICAS = 2
 
 def get_db():
     if "db" not in g:
@@ -182,10 +181,8 @@ def add_files():
 
     time_lapsed = end_time - start_time
 
-    f = open(os.path.join(sys.path[0], 'times.txt'), 'a+')
-
-    f.write("Size: {0}, Time: {1}\n".format(size,time_lapsed))
-    f.close()
+    with open('times.txt', 'a') as f:
+        f.write(f"Size: {size}, Time: {time_lapsed}\n")
 
     print(time_lapsed)
 
@@ -269,4 +266,4 @@ def add_files_rs():
 if __name__ == "__main__":
     host_local_computer = "localhost"
     host_local_network = "0.0.0.0"
-    app.run(host="localhost", port=9000)
+    app.run(host="192.168.101", port=9000)

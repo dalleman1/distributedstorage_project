@@ -15,7 +15,7 @@ if data_folder != './':
     except FileExistsError:
         pass
 
-logging.info(f'Storage node: {storage_node_id} is using data folder: {data_folder}')
+print(f'Storage node: {storage_node_id} is using data folder: {data_folder}')
 
 pull_address = 'tcp://localhost:5557'
 push_address = 'tcp://localhost:5558'
@@ -63,7 +63,7 @@ while True:
 
         data = msg[1]
 
-        logging.info(f'Filename: {filename} Size: {len(data)}')
+        print(f'Filename: {filename} Size: {len(data)}')
 
         with open(os.path.join('./', data_folder, filename), 'wb') as f:
             f.write(data)
