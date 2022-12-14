@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+message storedata_request
+{
+    string filename = 1;
+    int32 max_erasures = 2;
+}
+message getdata_request
+{
+    string filename = 1;
+}
+
+enum request_type
+{
+    MESSAGE_ENCODE = 0;
+    MESSAGE_DECODE = 1;
+}
+
+message header
+{
+    request_type request_type = 1;
+}
