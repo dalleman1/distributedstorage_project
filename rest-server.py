@@ -13,6 +13,8 @@ import reedsolomon
 import json
 
 
+MAX_ERASURES = 1
+
 f = open(os.path.join(sys.path[0], 'times.txt'), 'a+')
 #f.write("{0}\n".format(sec))
 f.close()
@@ -239,15 +241,15 @@ def add_files_rs():
     task.filename = str(cursor.lastrowid)
 
     
-    # for idx in range(MAX_ERASURES):
-    #     send_task_socket.send_multipart([
-    #         task.SerializeToString(),
-    #         data
-    #     ])
+    for idx in range(MAX_ERASURES):
+        send_task_socket.send_multipart([
+            task.SerializeToString(),
+            data
+        ])
 
-    # for idx in range(MAX_ERASURES):
-    #     resp = response_socket.recv_string()
-    #     logging.info(f'{idx}: {resp}')
+    for idx in range(MAX_ERASURES):
+        resp = response_socket.recv_string()
+        logging.info(f'{idx}: {resp}')
 
     end_time = time.time()
 
