@@ -12,21 +12,26 @@ send_server_address = "tcp://localhost:5555"
 
 if platform.system() == "Linux":
     server_address = input("Server address: 192.168.0.___")
-    recv_server_address = f"tcp://192.168.0.{server_address}5556"
-    send_server_address = f"tcp://192.168.0.{server_address}5555"
+    recv_server_address = f"tcp://192.168.0.{server_address}:5556"
+    send_server_address = f"tcp://192.168.0.{server_address}:5555"
+    recv_job_address = f"tcp://192.168.0.{server_address}:5560"
+    send_job_address = f"tcp://192.168.0.{server_address}:5559"
+    recv_nodes_address = f"tcp://192.168.0.{server_address}:5558"
+    req_file_address = f"tcp://192.168.0.{server_address}:5557"
+
 
 context = zmq.Context()
 recv_job_socket = context.socket(zmq.PULL)
-recv_job_socket.bind("tcp://*:5560")
+recv_job_socket.bind(recv_job_address)
 
 send_job_socket = context.socket(zmq.PUSH)
-send_job_socket.bind("tcp://*:5559")
+send_job_socket.bind(send_job_address)
 
 recv_nodes_socket = context.socket(zmq.PULL)
-recv_nodes_socket.bind("tcp://*:5558")
+recv_nodes_socket.bind(recv_nodes_address)
 
 req_file_socket = context.socket(zmq.PUB)
-req_file_socket.bind("tcp://*:5557")
+req_file_socket.bind(req_file_address)
 
 recv_server = context.socket(zmq.PULL)
 recv_server.connect(recv_server_address)
@@ -64,6 +69,7 @@ while True:
 
     # Flask server sends message
     if recv_server in sockes:
+        start_time = time.time()
         msg = recv_server.recv_multipart()
         task = messages_pb2.data_request()
         task.ParseFromString(msg[0])
@@ -93,10 +99,12 @@ while True:
 
             # Wait for response from a single node
             logging.info(f'Waiting for file "{task.filename}"')
-            msg = recv_job_socket.recv_multipart()
+            msg = recv_job_socket.recv()
 
             # Forwards to server 
-            send_server.send(msg[0])
+            send_server.send(msg)
 
+        time_lapsed = time.time() - start_time
 
-
+        with open('leadTime.txt', 'a') as f:
+            f.write(f"Size: {len(msg)}, Time: {time_lapsed}\n")

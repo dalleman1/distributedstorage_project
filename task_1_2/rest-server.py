@@ -52,6 +52,7 @@ app.teardown_appcontext(close_db)
 
 @app.route('/files', methods=['POST'])
 def add_files():
+    start_time = time.time()
     files = request.files 
     if not files or not files.get('file'):
         logging.error('No file was uploaded in the request!')
@@ -84,7 +85,12 @@ def add_files():
     ])
 
     ack = recv_lead_node.recv()
-    print(ack)
+    
+    time_lapsed = time.time() - start_time
+
+    with open('serverTime.txt', 'a') as f:
+        f.write(f"Size: {size}, Time: {time_lapsed}\n")
+
     return make_response({'id': cursor.lastrowid}, 201) 
 
 @app.route('/files/<int:file_id>', methods=['GET'])
@@ -115,4 +121,4 @@ def download_file(file_id):
 if __name__ == "__main__":
     host_local_computer = "localhost"
     host_local_network = "0.0.0.0"
-    app.run(host="localhost", port=9000)
+    app.run(host="192.168.0.101", port=9000)

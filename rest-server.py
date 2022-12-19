@@ -212,7 +212,7 @@ def add_files_rs():
     size = len(data)
 
     if storage_mode == 'erasurecode_rs':
-        fragment_names = reedsolomon.store_file(data, MAX_ERASURES, send_task_socket,response_socket)
+        fragment_names = reedsolomon.store_file(data, MAX_ERASURES, send_task_socket, response_socket)
         print("Using Erasurecode")
         storage_details = {
             "code_fragments": fragment_names,

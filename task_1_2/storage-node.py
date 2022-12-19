@@ -22,13 +22,18 @@ send_file_address = "tcp://localhost:5560"
 reciver_ctrl_address = "tcp://localhost:5559"
 sender_ctrl_address = "tcp://localhost:5558"
 recv_file_req_address = "tcp://localhost:5557"
+pair_address = f"tcp://*:{port}"
 
 if platform.system() == "Linux":
     server_address = input("Server address: 192.168.0.___")
-    send_file_address = f"tcp://192.168.0{server_address}::5560"
+    send_file_address = f"tcp://192.168.0.{server_address}:5560"
     reciver_ctrl_address = f"tcp://192.168.0.{server_address}:5559"
     sender_ctrl_address = f"tcp://192.168.0.{server_address}:5558"
     recv_file_req_address = f"tcp://192.168.0.{server_address}:5557"
+    node_address = input("Node address: 192.168.0.")
+    pair_address = f"tcp://192.168.0.{node_address}:{port}"
+
+port = pair_address
 
 context = zmq.Context()
 
@@ -50,7 +55,8 @@ send_file.connect(send_file_address)
 
 # Pair connection - to communicate with other storage nodes
 pair_socket = context.socket(zmq.PAIR)
-pair_socket.bind(f"tcp://*:{port}")
+print(pair_address)
+pair_socket.bind(pair_address)
 
 # Send id to controller 
 idTask = messages_pb2.node_init()
@@ -74,12 +80,7 @@ def send_to_other_node(task, data):
 
     task.node_list = json.dumps(node_list)
 
-    node_port = random.choice(node_list)
-
-    if platform.system() == "Linux":
-        pair_conn_addr= f"tcp://192.168.0.{server_address}:{node_port}"
-    else:
-        pair_conn_addr = f"tcp://localhost:{node_port}"
+    pair_conn_addr = random.choice(node_list)
 
     with context.socket(zmq.PAIR) as conn:
         conn.connect(pair_conn_addr)
