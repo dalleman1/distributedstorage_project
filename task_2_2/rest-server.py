@@ -3,7 +3,7 @@ import sqlite3
 import zmq
 import time
 import sys
-
+import reedsolomonModified
 import io
 import logging
 import os
@@ -45,6 +45,7 @@ push_address = 'tcp://*:5558'
 subscriber_address = 'tcp://*:5559'
 encoding_push_address = 'tcp://*:5560'
 
+
 if is_raspberry_pi():
     server_address = input('Server address: 192.168.0.___')
     pull_address = f'tcp://192.168.0.{server_address}:5557'
@@ -70,6 +71,8 @@ data_req_socket.bind(subscriber_address)
 # Socket to send encoding task to 'random storage node'
 encoding_socket = context.socket(zmq.PUB)
 encoding_socket.bind(encoding_push_address)
+
+
 
 
 
@@ -109,22 +112,37 @@ def download_file(file_id):
         return make_response({'message' : f'File {file_id} not found!'}, 404)
 
     res = dict(res)
-
-    task = messages_pb2.getdata_request()
-    task.filename = str(file_id)
-
-    storage_details = json.loads(res['storage_details'])
+ 
 
     if res['storage_mode'] == 'erasurecode_rs':
-        coded_fragments = storage_details['code_fragments']
-        max_erasures = storage_details['max_erasures']
+        print(res['storage_details'])
+        storage_details = json.loads(res['storage_details'])
+        print(type(storage_details))
+        coded_fragments = storage_details['fragment_names']
+        max_erasures = MAX_ERASURES
 
-        file_data = reedsolomon.get_file(
-            coded_fragments,
-            max_erasures,res['size'],
-            data_req_socket,
-            response_socket)
+        header = messages_pb2.header()
+        header.request_type = messages_pb2.MESSAGE_DECODE
+
+        task = messages_pb2.getdataErasure_request()
+        task.filename = str(file_id)
+        task.max_erasures = max_erasures
+        task.file_size = res['size']
+        task.coded_fragments = json.dumps(coded_fragments)
+
+        encoding_socket.send_multipart([
+            random.choice(node_address).encode('UTF-8'),
+            header.SerializeToString(),
+            task.SerializeToString()]
+        )
+
+        file_data = response_socket.recv()
+
         return send_file(io.BytesIO(file_data),mimetype=res['content_type'])
+    
+    task = messages_pb2.getdata_request()
+    task.filename = str(file_id)
+    storage_details = json.loads(res['storage_details'])
 
     data_req_socket.send(task.SerializeToString())
 
@@ -238,6 +256,7 @@ def add_files_rs():
         task.filename = filename
         task.max_erasures = max_erasures
 
+        print("Delegating erasure")
         # Send encoding task to one of the storage nodes
         encoding_socket.send_multipart([
             random.choice(node_address).encode('UTF-8'),
@@ -245,14 +264,24 @@ def add_files_rs():
             task.SerializeToString(),
             data
         ])
-
+        
+        print("Awaiting Response")
         res = response_socket.recv_string()
 
+        db = get_db()
+        cursor = db.execute(
+        "INSERT INTO file(filename, size, content_type, storage_mode, storage_details) VALUES (?,?,?,?,?)",
+        (filename, size, content_type, storage_mode, res))
+        db.commit()
+        # Wait to get response from encoding storage node
+        
         print("Saved file %s" %res)
 
-        return make_response("Success", 201)
+        return make_response({"id": cursor.lastrowid}, 201)
 
-        # Wait to get response from encoding storage node
+    
+
+       
 
 
 

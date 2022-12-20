@@ -10,10 +10,19 @@ message getdata_request
     string filename = 1;
 }
 
+message getdataErasure_request
+{
+    string filename = 1;
+    int32 max_erasures = 2;
+    int32 file_size = 3;
+    string coded_fragments = 4;
+}
+
 enum request_type
 {
     MESSAGE_ENCODE = 0;
     MESSAGE_DECODE = 1;
+    MESSAGE_RESPONS = 2;
 }
 
 message header

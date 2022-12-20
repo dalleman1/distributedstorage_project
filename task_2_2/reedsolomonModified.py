@@ -12,6 +12,7 @@ import copy
 from utils import random_string
 import messages_pb2
 import json
+import zmq
 
 STORAGE_NODES_NUM = 4
 
@@ -22,7 +23,8 @@ RS_CAUCHY_COEFFS = [
     bytearray([127, 255, 126, 253])
 ]
 
-def store_file(file_data, max_erasures, send_task_socket, response_socket):
+def store_file(file_data, max_erasures, send_task_socket, 
+response_socket1,response_socket2,response_socket3):
     """
     Store a file using Reed Solomon erasure coding, protecting it against 'max_erasures' 
     unavailable storage nodes. 
@@ -51,6 +53,8 @@ def store_file(file_data, max_erasures, send_task_socket, response_socket):
     symbol = bytearray(encoder.symbol_bytes)
 
     fragment_names = []
+    respons_name = ""
+    respons_symbol = bytearray()
 
     # Generate one coded fragment for each Storage Node
     for i in range(STORAGE_NODES_NUM):
@@ -63,21 +67,34 @@ def store_file(file_data, max_erasures, send_task_socket, response_socket):
         name = random_string(8)
         fragment_names.append(name)
         
-        # Send a Protobuf STORE DATA request to the Storage Nodes
-        task = messages_pb2.storedata_request()
-        task.filename = name
+        if i == 0:
+            #Save data on self
+            respons_name = name
+            respons_symbol = (coefficients[:symbols] + bytearray(symbol))
+        else:
+            # Send a Protobuf STORE DATA request to the Storage Nodes
+            task = messages_pb2.storedata_request()
+            task.filename = name
+            header = messages_pb2.header()
+            header.request_type = messages_pb2.MESSAGE_ENCODE
+            send_task_socket.send_multipart([
+                header.SerializeToString(),
+                task.SerializeToString(),
+                coefficients[:symbols] + bytearray(symbol)
+            ])
+            
 
-        send_task_socket.send_multipart([
-            task.SerializeToString(),
-            coefficients[:symbols] + bytearray(symbol)
-        ])
     
-    # Wait until we receive a response for every fragment
-    for task_nbr in range(STORAGE_NODES_NUM):
-        resp = response_socket.recv_string()
-        print('Received: %s' % resp)
+    
+    """# Wait until we receive a response for every fragment
+    resp = response_socket1.recv_string()
+    print('Received: %s' % resp)
+    resp = response_socket2.recv_string()
+    print('Received: %s' % resp)
+    resp = response_socket3.recv_string()
+    print('Received: %s' % resp)"""
 
-    return fragment_names
+    return [fragment_names,respons_name,respons_symbol]
 #
 
 
@@ -114,7 +131,7 @@ def decode_file(symbols):
 
 
 def get_file(coded_fragments, max_erasures, file_size,
-             data_req_socket, response_socket):
+             data_req_socket, response_socket1, response_socket2, response_socket3):
     """
     Implements retrieving a file that is stored with Reed Solomon erasure coding
 
@@ -129,27 +146,64 @@ def get_file(coded_fragments, max_erasures, file_size,
     # We need 4-max_erasures fragments to reconstruct the file, select this many 
     # by randomly removing 'max_erasures' elements from the given chunk names. 
     fragnames = copy.deepcopy(coded_fragments)
-    for i in range(max_erasures):
+    for i in range(max_erasures-1):
         fragnames.remove(random.choice(fragnames))
     
     # Request the coded fragments in parallel
     for name in fragnames:
         task = messages_pb2.getdata_request()
+        header = messages_pb2.header()
+        header.request_type = messages_pb2.MESSAGE_DECODE
         task.filename = name
-        data_req_socket.send(
-            task.SerializeToString()
+        print(name)
+        data_req_socket.send_multipart(
+            [header.SerializeToString(),
+            task.SerializeToString()]
             )
 
     # Receive all chunks and insert them into the symbols array
     symbols = []
-    for _ in range(len(fragnames)):
-        result = response_socket.recv_multipart()
-        # In this case we don't care about the received name, just use the 
-        # data from the second frame
-        symbols.append({
-            "chunkname": result[0].decode('utf-8'), 
-            "data": bytearray(result[1])
-        })
+
+    #Setup listen to all 3 respons sockets
+    poller = zmq.Poller()
+    poller.register(response_socket1,zmq.POLLIN)
+    poller.register(response_socket2,zmq.POLLIN)
+    poller.register(response_socket3,zmq.POLLIN)
+
+    print("Waiting for respons")
+    while(len(symbols) < max_erasures):
+        socks = dict(poller.poll(100))
+
+        if response_socket1 in socks:
+            print("Recieved respons")
+            result = response_socket1.recv_multipart()
+            # In this case we don't care about the received name, just use the 
+            # data from the second frame
+            symbols.append({
+                "chunkname": result[0].decode('utf-8'), 
+                "data": bytearray(result[1])
+            })
+
+        if response_socket2 in socks:
+            print("Recieved respons")
+            result = response_socket2.recv_multipart()
+            # In this case we don't care about the received name, just use the 
+            # data from the second frame
+            symbols.append({
+                "chunkname": result[0].decode('utf-8'), 
+                "data": bytearray(result[1])
+            })
+
+        if response_socket3 in socks:
+            print("Recieved respons")
+            result = response_socket3.recv_multipart()
+            # In this case we don't care about the received name, just use the 
+            # data from the second frame
+            symbols.append({
+                "chunkname": result[0].decode('utf-8'), 
+                "data": bytearray(result[1])
+            })
+    
     print("All coded fragments received successfully")
 
     #Reconstruct the original file data
