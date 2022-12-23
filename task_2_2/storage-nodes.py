@@ -26,6 +26,7 @@ print("Data folder %s " % data_folder)
 encoding_subscriber_address = "tcp://localhost:5560"
 sender_ctrl_address = "tcp://localhost:5558"
 Sender_recieve_address = "tcp://localhost:5557"
+subscriber_address = "tcp://localhost:5559"
 
 
 OwnPushAdd = f'556{id}'
@@ -45,6 +46,11 @@ encoding_subscriber = context.socket(zmq.SUB)
 encoding_subscriber.connect(encoding_subscriber_address)
 encoding_subscriber.setsockopt_string(zmq.SUBSCRIBE, id)
 
+# Socket to listening for incoming encoding tasks
+decoding_subscriber = context.socket(zmq.SUB)
+decoding_subscriber.connect(subscriber_address)
+decoding_subscriber.setsockopt(zmq.SUBSCRIBE, b'')
+
 # Create push socket for responding to controller
 sender_ctrl = context.socket(zmq.PUSH)
 sender_ctrl.connect(sender_ctrl_address)
@@ -62,6 +68,7 @@ rs_push_socket.bind(f'tcp://*:556{id}')
 #Listen on multible 
 poller = zmq.Poller()
 poller.register(encoding_subscriber, zmq.POLLIN)
+poller.register(decoding_subscriber,zmq.POLLIN)
 for element in range(0,2):
     Pull_Socket_List[element].connect(f'tcp://localhost:{OtherAdd_list[element]}')
     poller.register(Pull_Socket_List[element],zmq.POLLIN)
@@ -123,7 +130,24 @@ while True:
                     pass
 
     if Sender_recieve_socket in socks:
+        print("Recieved msg on sender recieve")
         msg = Sender_recieve_socket.recv()
+
+        task = messages_pb2.getdata_request()
+        task.ParseFromString(msg)
+
+        filename = task.filename
+        filename += '.bin'
+        print(filename)
+        try:
+            with open(os.path.join(data_folder, filename), 'rb') as f:
+                sender_ctrl.send_multipart([bytes(filename, 'utf-8'), f.read()])
+        except FileNotFoundError:
+            pass
+
+    if decoding_subscriber in socks:
+        print("Recieved msg pn sender recieve")
+        msg = decoding_subscriber.recv()
 
         task = messages_pb2.getdata_request()
         task.ParseFromString(msg)

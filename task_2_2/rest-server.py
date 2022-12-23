@@ -114,6 +114,8 @@ def download_file(file_id):
     res = dict(res)
  
 
+    
+
     if res['storage_mode'] == 'erasurecode_rs':
         print(res['storage_details'])
         storage_details = json.loads(res['storage_details'])
@@ -121,23 +123,11 @@ def download_file(file_id):
         coded_fragments = storage_details['fragment_names']
         max_erasures = MAX_ERASURES
 
-        header = messages_pb2.header()
-        header.request_type = messages_pb2.MESSAGE_DECODE
-
-        task = messages_pb2.getdataErasure_request()
-        task.filename = str(file_id)
-        task.max_erasures = max_erasures
-        task.file_size = res['size']
-        task.coded_fragments = json.dumps(coded_fragments)
-
-        encoding_socket.send_multipart([
-            random.choice(node_address).encode('UTF-8'),
-            header.SerializeToString(),
-            task.SerializeToString()]
-        )
-
-        file_data = response_socket.recv()
-
+        file_data = reedsolomonModified.get_file(
+            coded_fragments,
+            max_erasures,res['size'],
+            data_req_socket,
+            response_socket)
         return send_file(io.BytesIO(file_data),mimetype=res['content_type'])
     
     task = messages_pb2.getdata_request()

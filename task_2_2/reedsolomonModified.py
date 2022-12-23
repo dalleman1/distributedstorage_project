@@ -129,9 +129,8 @@ def decode_file(symbols):
     return data_out
 #
 
-
 def get_file(coded_fragments, max_erasures, file_size,
-             data_req_socket, response_socket1, response_socket2, response_socket3):
+             data_req_socket, response_socket):
     """
     Implements retrieving a file that is stored with Reed Solomon erasure coding
 
@@ -146,71 +145,37 @@ def get_file(coded_fragments, max_erasures, file_size,
     # We need 4-max_erasures fragments to reconstruct the file, select this many 
     # by randomly removing 'max_erasures' elements from the given chunk names. 
     fragnames = copy.deepcopy(coded_fragments)
-    for i in range(max_erasures-1):
+    for i in range(max_erasures):
         fragnames.remove(random.choice(fragnames))
     
     # Request the coded fragments in parallel
     for name in fragnames:
         task = messages_pb2.getdata_request()
-        header = messages_pb2.header()
-        header.request_type = messages_pb2.MESSAGE_DECODE
         task.filename = name
-        print(name)
-        data_req_socket.send_multipart(
-            [header.SerializeToString(),
-            task.SerializeToString()]
+        data_req_socket.send(
+            task.SerializeToString()
             )
+    #print("Waiting for respons")
+
 
     # Receive all chunks and insert them into the symbols array
     symbols = []
-
-    #Setup listen to all 3 respons sockets
-    poller = zmq.Poller()
-    poller.register(response_socket1,zmq.POLLIN)
-    poller.register(response_socket2,zmq.POLLIN)
-    poller.register(response_socket3,zmq.POLLIN)
-
-    print("Waiting for respons")
-    while(len(symbols) < max_erasures):
-        socks = dict(poller.poll(100))
-
-        if response_socket1 in socks:
-            print("Recieved respons")
-            result = response_socket1.recv_multipart()
-            # In this case we don't care about the received name, just use the 
-            # data from the second frame
-            symbols.append({
-                "chunkname": result[0].decode('utf-8'), 
-                "data": bytearray(result[1])
-            })
-
-        if response_socket2 in socks:
-            print("Recieved respons")
-            result = response_socket2.recv_multipart()
-            # In this case we don't care about the received name, just use the 
-            # data from the second frame
-            symbols.append({
-                "chunkname": result[0].decode('utf-8'), 
-                "data": bytearray(result[1])
-            })
-
-        if response_socket3 in socks:
-            print("Recieved respons")
-            result = response_socket3.recv_multipart()
-            # In this case we don't care about the received name, just use the 
-            # data from the second frame
-            symbols.append({
-                "chunkname": result[0].decode('utf-8'), 
-                "data": bytearray(result[1])
-            })
-    
+    for _ in range(len(fragnames)):
+        result = response_socket.recv_multipart()
+        # In this case we don't care about the received name, just use the 
+        # data from the second frame
+        symbols.append({
+            "chunkname": result[0].decode('utf-8'), 
+            "data": bytearray(result[1])
+        })
     print("All coded fragments received successfully")
 
     #Reconstruct the original file data
     file_data = decode_file(symbols)
 
     return file_data[:file_size]
-#
+
+
 
 # get_file_for_repair goes here
 def get_file_for_repair(fragments_to_retrieve, file_size,
