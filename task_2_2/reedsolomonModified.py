@@ -72,8 +72,13 @@ def get_file(coded_fragments, max_erasures, file_size,
     #poller.register(response_socket1,zmq.POLLIN)
     #poller.register(response_socket2,zmq.POLLIN)
     #poller.register(response_socket3,zmq.POLLIN)
-            message = zmq_socket.recv_string(flags=zmq.NOBLOCK)
-            print("Received reply %s " % message)
+            #message = zmq_socket.recv_string(flags=zmq.NOBLOCK)
+            #print("Received reply %s " % message)
+            result = zmq_socket.recv_multipart()
+            symbols.append({
+                "chunkname": result[0].decode('utf-8'),
+                "data": bytearray(result[1])
+            })
         except zmq.ZMQError as e:
             if e.errno == zmq.EAGAIN:
                 pass # no message was ready (yet!)
@@ -83,6 +88,37 @@ def get_file(coded_fragments, max_erasures, file_size,
     print("All coded fragments received successfully")
 
     #Reconstruct the original file data
-    #file_data = decode_file(symbols)
+    file_data = decode_file(symbols)
 
-    #return file_data[:file_size]
+    return file_data[:file_size]
+
+def decode_file(symbols):
+    """
+    Decode a file using Reed Solomon decoder and the provided coded symbols.
+    The number of symbols must be the same as STORAGE_NODES_NUM - max_erasures.
+
+    :param symbols: coded symbols that contain both the coefficients and symbol data
+    :return: the decoded file data
+    """
+
+    # Reconstruct the original data with a decoder
+    symbols_num = len(symbols)
+    symbol_size = len(symbols[0]['data']) - symbols_num #subtract the coefficients' size
+    decoder = kodo.block.Decoder(kodo.FiniteField.binary8)
+    decoder.configure(symbols_num, symbol_size)
+    data_out = bytearray(decoder.block_bytes)
+    decoder.set_symbols_storage(data_out)
+
+    for symbol in symbols:
+        # Separate the coefficients from the symbol data
+        coefficients = symbol['data'][:symbols_num]
+        symbol_data = symbol['data'][symbols_num:]
+        # Feed it to the decoder
+        decoder.decode_symbol(symbol_data, coefficients)
+
+    # Make sure the decoder successfully reconstructed the file
+    assert(decoder.is_complete())
+    print("File decoded successfully")
+
+    return data_out
+#

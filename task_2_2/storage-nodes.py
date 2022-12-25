@@ -107,7 +107,12 @@ while True:
 
         try:
             with open(os.path.join(data_folder, filename), 'rb') as f:
-                testpush_socket.send_string(filename)
+                #testpush_socket.send_string(filename)
+                #print("Sending response")
+                testpush_socket.send_multipart([
+                    bytes(filename, 'utf-8'),
+                    f.read()
+                ])
                 print("Sending response")
 
         except FileNotFoundError:
@@ -126,7 +131,7 @@ while True:
             task = messages_pb2.getdataErasure_request()
             task.ParseFromString(msg[2])
             print(json.loads(task.coded_fragments))
-            file = reedsolomonModified.get_file(
+            file_data = reedsolomonModified.get_file(
                 json.loads(task.coded_fragments),
                 task.max_erasures,
                 task.file_size,
@@ -135,7 +140,7 @@ while True:
                 Pull_RS_Socket_3
                 )
 
-            sender_ctrl.send(file)
+            sender_ctrl.send(file_data)
 
 
            
