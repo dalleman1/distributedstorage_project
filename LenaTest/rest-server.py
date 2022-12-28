@@ -114,6 +114,8 @@ def download_file(file_id):
     res = dict(res)
  
 
+    
+
     if res['storage_mode'] == 'erasurecode_rs':
         print(res['storage_details'])
         storage_details = json.loads(res['storage_details'])
@@ -124,7 +126,7 @@ def download_file(file_id):
         header = messages_pb2.header()
         header.request_type = messages_pb2.MESSAGE_DECODE
 
-        task = messages_pb2.getdataErasure_request()
+        task = messages_pb2.getdataErasure_request() 
         task.filename = str(file_id)
         task.max_erasures = max_erasures
         task.file_size = res['size']
@@ -133,13 +135,13 @@ def download_file(file_id):
         encoding_socket.send_multipart([
             random.choice(node_address).encode('UTF-8'),
             header.SerializeToString(),
-            task.SerializeToString()]
-        )
+            task.SerializeToString()
+        ])
 
         file_data = response_socket.recv()
 
-        return send_file(io.BytesIO(file_data),mimetype=res['content_type'])
-    
+        return send_file(io.BytesIO(file_data), mimetype=res['content_type'])
+
     task = messages_pb2.getdata_request()
     task.filename = str(file_id)
     storage_details = json.loads(res['storage_details'])
@@ -149,7 +151,6 @@ def download_file(file_id):
     result = response_socket.recv_multipart()
     filename = result[0].decode('utf-8')
 
-    # File data is in the 2nd frame of the message
     data = result[1]
 
     return send_file(io.BytesIO(data), mimetype=res['content_type'])

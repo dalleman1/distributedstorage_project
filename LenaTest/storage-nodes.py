@@ -23,27 +23,25 @@ if data_folder != "./":
 
 print("Data folder %s " % data_folder)
 
-# Test socket
-subtest_address = "tcp://localhost:5589"
-
-context = zmq.Context()
-
-# Socket to receive get chunk message from the controller
-sub_test = context.socket(zmq.SUB)
-sub_test.connect(subtest_address)
-sub_test.setsockopt(zmq.SUBSCRIBE, b'')
-# TEEEEST END ###################################
-
-
 encoding_subscriber_address = "tcp://localhost:5560"
 sender_ctrl_address = "tcp://localhost:5558"
 Sender_recieve_address = "tcp://localhost:5557"
+subscriber_address = "tcp://localhost:5559"
 
 
 OwnPushAdd = f'556{id}'
 OtherAdd_list = ['5561','5562','5563','5564']
 OtherAdd_list.remove(OwnPushAdd)   #Make list of other add
 
+subtest_address = "tcp://localhost:5589"
+
+context = zmq.Context()
+
+# socket to receive get chunk message from the controller
+sub_test = context.socket(zmq.SUB)
+sub_test.connect(subtest_address)
+sub_test.setsockopt(zmq.SUBSCRIBE, b'')
+# TEEEEST END ###############
 
 Pull_RS_Socket_1 = context.socket(zmq.PULL) # Socket to receive from other nodes
 Pull_RS_Socket_2 = context.socket(zmq.PULL) # Socket to receive from other nodes
@@ -55,6 +53,11 @@ Pull_Socket_List = [Pull_RS_Socket_1,Pull_RS_Socket_2,Pull_RS_Socket_3]
 encoding_subscriber = context.socket(zmq.SUB)
 encoding_subscriber.connect(encoding_subscriber_address)
 encoding_subscriber.setsockopt_string(zmq.SUBSCRIBE, id)
+
+# Socket to listening for incoming encoding tasks
+decoding_subscriber = context.socket(zmq.SUB)
+decoding_subscriber.connect(subscriber_address)
+decoding_subscriber.setsockopt(zmq.SUBSCRIBE, b'')
 
 # Create push socket for responding to controller
 sender_ctrl = context.socket(zmq.PUSH)
@@ -73,10 +76,15 @@ rs_push_socket.bind(f'tcp://*:556{id}')
 #Listen on multible 
 poller = zmq.Poller()
 poller.register(encoding_subscriber, zmq.POLLIN)
-poller.register(sub_test, zmq.POLLIN)
+poller.register(sub_test,zmq.POLLIN)
 for element in range(0,2):
     Pull_Socket_List[element].connect(f'tcp://localhost:{OtherAdd_list[element]}')
     poller.register(Pull_Socket_List[element],zmq.POLLIN)
+
+
+### TESTER socket ###
+testpush_socket = context.socket(zmq.PUSH)
+testpush_socket.connect('tcp://localhost:5591')
 
 print("Setup done")
 
@@ -87,6 +95,54 @@ while True:
         break
     pass
 
+    for socketNr in range(0,len(Pull_Socket_List)):
+        if Pull_Socket_List[socketNr] in socks:
+            print("recieved msg from rs_send_task_socket")
+            msg = Pull_Socket_List[socketNr].recv_multipart()
+
+            header = messages_pb2.header()
+            header.ParseFromString(msg[0])
+
+            if header.request_type == messages_pb2.MESSAGE_ENCODE:
+                #print(msg[2])
+                task = messages_pb2.storedata_request()
+                task.ParseFromString(msg[1])
+                
+                filename = task.filename
+                filename += '.bin'
+
+                data = msg[2]
+
+                #logging.info(f'Filename: {filename} Size: {len(data)}')
+
+                with open(os.path.join('./', data_folder, filename), 'wb') as f:
+                    f.write(data)
+
+                print(f'{id}: saved the file')
+            elif header.request_type == messages_pb2.MESSAGE_DECODE:
+                print("Recieved decode request from other node")
+                task = messages_pb2.getdata_request()
+                task.ParseFromString(msg[1])
+
+                print("Finished parsing from string")
+                filename = task.filename
+                filename += '.bin'
+
+                header = messages_pb2.header()
+                header.request_type = messages_pb2.MESSAGE_DECODE
+                
+                try:
+                    with open(os.path.join(data_folder, filename), 'rb') as f:
+                        rs_push_socket.send_multipart([
+                            header.SerializeToString(),
+                            bytes(filename, 'utf-8'), 
+                            f.read(),
+                            ])
+                        print("Sending respons")
+                except FileNotFoundError:
+                    print("File not found with name:" + filename )
+                    pass
+
     if sub_test in socks:
         msg = sub_test.recv_multipart()
         task = messages_pb2.getdata_request()
@@ -95,7 +151,19 @@ while True:
         print("Finished parsing from string")
         filename = task.filename
         filename += '.bin'
-        print(filename)
+        print("Trying to find %s" %filename)
+
+        try:
+            with open(os.path.join(data_folder, filename), 'rb') as f:
+                testpush_socket.send_multipart([
+                    bytes(filename, 'utf-8'),
+                    f.read()
+                ])
+                print("Sending response")
+
+        except FileNotFoundError:
+            print("File not found with name: " + filename)
+            pass
 
     if encoding_subscriber in socks:
         print("Recieved msg on encoding sub")
@@ -108,18 +176,56 @@ while True:
             print("recieved decode msg")
             task = messages_pb2.getdataErasure_request()
             task.ParseFromString(msg[2])
-            print(json.loads(task.coded_fragments))
-            file = reedsolomonModified.get_file(
+            #print(json.loads(task.coded_fragments))
+            file_data = reedsolomonModified.get_file(
                 json.loads(task.coded_fragments),
                 task.max_erasures,
-                task.file_size,
-                Pull_RS_Socket_1,
-                Pull_RS_Socket_2,
-                Pull_RS_Socket_3
+                task.file_size
                 )
 
-            sender_ctrl.send(file)
+            print("Received file from decoding")
+            sender_ctrl.send(file_data)
 
+
+        if header.request_type == messages_pb2.MESSAGE_ENCODE:
+            print("recieved msg from encoding_subscriber")
+            task = messages_pb2.storedata_request()
+            task.ParseFromString(msg[2])
+
+            data = bytearray(msg[3])
+            print("Storing")
+            respons_filename = ""
+            respons_data = bytearray()
+            [fragment_names, respons_filename,respons_data] = reedsolomonModified.store_file(data, MAX_ERASURES, 
+                rs_push_socket,
+                Pull_RS_Socket_1,
+                Pull_RS_Socket_2,
+                Pull_RS_Socket_3)
+            storage_details = {
+                "code_fragments": fragment_names,
+                "max_erasures": MAX_ERASURES
+            }
+
+
+            respons_filename += '.bin'
+            #logging.info(f'Filename: {filename} Size: {len(data)}')
+
+            
+            with open(os.path.join('./', data_folder, respons_filename), 'wb') as f:
+                f.write(respons_data)
+
+            print(f'{id}: saved the file')
+
+            size = len(data)
+            print("Chunk to save: %s, size: %d bytes " % (task.filename, len(data)))
+            print("Max erasures is: %d" % task.max_erasures)
+
+            print(fragment_names)
+
+
+            sender_ctrl.send_string(
+                json.dumps({'fragment_names': fragment_names})
+                )
 
            
 
