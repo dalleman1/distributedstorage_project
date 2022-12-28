@@ -19,7 +19,6 @@ f = open(os.path.join(sys.path[0], 'times.txt'), 'a+')
 f.close()
 
 # Number replicas to create
-NUM_REPLICAS = 1
 MAX_ERASURES = 2
 
 # List with nodes to send to
@@ -114,8 +113,6 @@ def download_file(file_id):
     res = dict(res)
  
 
-    
-
     if res['storage_mode'] == 'erasurecode_rs':
         print(res['storage_details'])
         storage_details = json.loads(res['storage_details'])
@@ -132,6 +129,8 @@ def download_file(file_id):
         task.file_size = res['size']
         task.coded_fragments = json.dumps(coded_fragments)
 
+        start_time = time.time()
+
         encoding_socket.send_multipart([
             random.choice(node_address).encode('UTF-8'),
             header.SerializeToString(),
@@ -139,6 +138,11 @@ def download_file(file_id):
         ])
 
         file_data = response_socket.recv()
+
+        total_time = time.time() - start_time
+
+        with open('lead_node_decode.txt', 'a') as f:
+            f.write(f'Size: {len(file_data)} Time: {total_time}')
 
         return send_file(io.BytesIO(file_data), mimetype=res['content_type'])
 
@@ -154,75 +158,6 @@ def download_file(file_id):
     data = result[1]
 
     return send_file(io.BytesIO(data), mimetype=res['content_type'])
-
-
-@app.route("/files/<int:file_id>", methods=["DELETE"])
-def delete_file(file_id):
-    # Delete from k storage nodes
-    # Delete from db
-    
-
-    return 
-
-
-
-@app.route("/files", methods=["POST"])
-def add_files():
-    start_time = time.time()
-
-    # Get payload from request
-    # Add to db
-    # Make copies to k storage nodes
-
-    files = request.files
-    if not files or not files.get('file'):
-        logging.error('No file was uploaded in the request!')
-        return make_response('File missing!', 400)
-   
-    file = files.get('file')
-    filename = file.filename
-    content_type = file.mimetype
-    
-    #do we need to read the file and not just send it forward?
-    data = bytearray(file.read())
-    size = len(data)
-
-    db = get_db()
-    cursor = db.execute(
-        """INSERT INTO file(filename, size, content_type)
-           VALUES (?, ?, ?)""",
-        (filename, size, content_type),
-    )
-
-    db.commit()
-
-    task = messages_pb2.storedata_request()
-    # using the db index as a unique index
-    task.filename = str(cursor.lastrowid)
-
-
-    for idx in range(NUM_REPLICAS):
-        send_task_socket.send_multipart([
-            task.SerializeToString(),
-            data
-        ])
-
-    for idx in range(NUM_REPLICAS):
-        resp = response_socket.recv_string()
-        logging.info(f'{idx}: {resp}')
-
-    end_time = time.time()
-
-    time_lapsed = end_time - start_time
-
-    f = open(os.path.join(sys.path[0], 'times.txt'), 'a+')
-
-    f.write("Size: {0}, Time: {1}\n".format(size,time_lapsed))
-    f.close()
-
-    print(time_lapsed)
-
-    return make_response({"id": cursor.lastrowid}, 201)
 
 @app.route("/files/erasurecode_rs", methods=["POST"])
 def add_files_rs():
@@ -278,17 +213,16 @@ def add_files_rs():
         
         print("Saved file %s" %res)
 
+        time_lapsed = time.time() - start_time
+
+        with open('lead_node_encode.txt', 'a') as f:
+            f.write(f"Size: {size}, Time: {time_lapsed}")
+
+
         return make_response({"id": cursor.lastrowid}, 201)
-
-    
-
-       
-
-
-
 
 
 if __name__ == "__main__":
     host_local_computer = "localhost"
     host_local_network = "0.0.0.0"
-    app.run(host="localhost", port=9000)
+    app.run(host="192.168.101", port=9000)

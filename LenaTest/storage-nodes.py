@@ -1,3 +1,5 @@
+import platform
+import time
 from urllib import response
 import zmq
 import messages_pb2
@@ -28,12 +30,23 @@ sender_ctrl_address = "tcp://localhost:5558"
 Sender_recieve_address = "tcp://localhost:5557"
 subscriber_address = "tcp://localhost:5559"
 
+if platform.system() == "Linux":
+    server_address = input("Server address: 192.168.0.___")
+    encoding_subscriber_address = f"tcp://192.168.0.{server_address}:5560"
+    sender_ctrl_address = f"tcp://192.168.0.{server_address}:5558"
+    Sender_recieve_address = f"tcp://192.168.0.{server_address}:5557"
+    subscriber_address = f"tcp://192.168.0.{server_address}:5559"
+
 
 OwnPushAdd = f'556{id}'
 OtherAdd_list = ['5561','5562','5563','5564']
 OtherAdd_list.remove(OwnPushAdd)   #Make list of other add
 
 subtest_address = "tcp://localhost:5589"
+
+if platform.system() == "Linux":
+    subtest_address = f"tcp://192.168.0.{server_address}:5589"
+
 
 context = zmq.Context()
 
@@ -77,14 +90,28 @@ rs_push_socket.bind(f'tcp://*:556{id}')
 poller = zmq.Poller()
 poller.register(encoding_subscriber, zmq.POLLIN)
 poller.register(sub_test,zmq.POLLIN)
-for element in range(0,2):
-    Pull_Socket_List[element].connect(f'tcp://localhost:{OtherAdd_list[element]}')
-    poller.register(Pull_Socket_List[element],zmq.POLLIN)
 
+if platform.system() == "Linux":
+        Pull_Socket_List[0].connect(f'tcp://192.168.0.101:{OtherAdd_list[0]}')
+        poller.register(Pull_Socket_List[0],zmq.POLLIN)
+        
+        Pull_Socket_List[1].connect(f'tcp://192.168.0.102:{OtherAdd_list[1]}')
+        poller.register(Pull_Socket_List[1],zmq.POLLIN)
+        
+        Pull_Socket_List[2].connect(f'tcp://192.168.0.103:{OtherAdd_list[2]}')
+        poller.register(Pull_Socket_List[2],zmq.POLLIN)
+else:
+    for element in range(0,2):
+        Pull_Socket_List[element].connect(f'tcp://localhost:{OtherAdd_list[element]}')
+        poller.register(Pull_Socket_List[element],zmq.POLLIN)
 
 ### TESTER socket ###
 testpush_socket = context.socket(zmq.PUSH)
-testpush_socket.connect('tcp://localhost:5591')
+
+if platform.system() == "Linux":
+    testpush_socket.connect(f'tcp://192.168.0.{server_address}:5591')
+else:
+    testpush_socket.connect('tcp://localhost:5591')
 
 print("Setup done")
 
@@ -174,21 +201,30 @@ while True:
 
         if header.request_type == messages_pb2.MESSAGE_DECODE:
             print("recieved decode msg")
+            start_time = time.time()
+            
             task = messages_pb2.getdataErasure_request()
             task.ParseFromString(msg[2])
             #print(json.loads(task.coded_fragments))
+            
             file_data = reedsolomonModified.get_file(
                 json.loads(task.coded_fragments),
                 task.max_erasures,
                 task.file_size
                 )
-
+                     
             print("Received file from decoding")
             sender_ctrl.send(file_data)
 
+            total_time = time.time() - start_time   
+
+            with open('decode_results.txt', 'a') as f:
+                f.write(f'Size: {task.file_size}, Time: {total_time}')
 
         if header.request_type == messages_pb2.MESSAGE_ENCODE:
             print("recieved msg from encoding_subscriber")
+            start_time = time.time()
+
             task = messages_pb2.storedata_request()
             task.ParseFromString(msg[2])
 
@@ -196,6 +232,7 @@ while True:
             print("Storing")
             respons_filename = ""
             respons_data = bytearray()
+            
             [fragment_names, respons_filename,respons_data] = reedsolomonModified.store_file(data, MAX_ERASURES, 
                 rs_push_socket,
                 Pull_RS_Socket_1,
@@ -205,7 +242,6 @@ while True:
                 "code_fragments": fragment_names,
                 "max_erasures": MAX_ERASURES
             }
-
 
             respons_filename += '.bin'
             #logging.info(f'Filename: {filename} Size: {len(data)}')
@@ -227,5 +263,8 @@ while True:
                 json.dumps({'fragment_names': fragment_names})
                 )
 
-           
+            total_time = time.time() - start_time
+
+            with open('encode_results.txt', 'a') as f:
+                f.write(f'Size: {len(data)}, Time: {total_time}')           
 
