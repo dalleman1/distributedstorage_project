@@ -1,0 +1,11 @@
+GET
+---
+10KB, Max_erasures=1, 1095 ms
+100KB, Max_erasures=1, 1112 ms
+1MB, Max_erasures=1, 1149 ms
+10MB, Max_erasures=1, 2120 ms
+
+10KB, Max_erasures=2, 1183 ms
+100KB, Max_erasures=2, 1200 ms
+1MB, Max_erasures=2, 1294 ms
+10MB, Max_erasures=2, 3360 ms
