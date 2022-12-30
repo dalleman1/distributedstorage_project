@@ -7,8 +7,149 @@ import os
 import random
 import string
 import reedsolomonModified
+import copy
+import time
+import kodo
 
 from utils import write_file
+from multiprocessing.pool import ThreadPool
+from multiprocessing import Process
+import threading
+from time import sleep
+
+# task executed in a worker process
+def empty_queue():
+    msg = sub_test.recv_multipart()
+    task = messages_pb2.getdata_request()
+    task.ParseFromString(msg[2])
+
+    print("Finished parsing from string")
+    filename = task.filename
+    filename += '.bin'
+    print("Trying to find %s" %filename)
+
+    try:
+        with open(os.path.join(data_folder, filename), 'rb') as f:
+                testpush_socket.send_multipart([
+                    bytes(filename, 'utf-8'),
+                    f.read()
+                ])
+        print("Sending response")
+
+    except FileNotFoundError:
+        print("File not found with name: " + filename)
+        pass
+
+    return 0
+
+
+def decode_file(symbols):
+    """
+    Decode a file using Reed Solomon decoder and the provided coded symbols.
+    The number of symbols must be the same as STORAGE_NODES_NUM - max_erasures.
+
+    :param symbols: coded symbols that contain both the coefficients and symbol data
+    :return: the decoded file data
+    """
+
+    # Reconstruct the original data with a decoder
+    symbols_num = len(symbols)
+    symbol_size = len(symbols[0]['data']) - symbols_num #subtract the coefficients' size
+    decoder = kodo.block.Decoder(kodo.FiniteField.binary8)
+    decoder.configure(symbols_num, symbol_size)
+    data_out = bytearray(decoder.block_bytes)
+    decoder.set_symbols_storage(data_out)
+
+    for symbol in symbols:
+        # Separate the coefficients from the symbol data
+        coefficients = symbol['data'][:symbols_num]
+        symbol_data = symbol['data'][symbols_num:]
+        # Feed it to the decoder
+        decoder.decode_symbol(symbol_data, coefficients)
+
+    # Make sure the decoder successfully reconstructed the file
+    assert(decoder.is_complete())
+    print("File decoded successfully")
+
+    return data_out
+#
+
+def get_file(coded_fragments, max_erasures, file_size):
+    """
+    Implements retrieving a file that is stored with Reed Solomon erasure coding
+
+    :param coded_fragments: Names of the coded fragments
+    :param max_erasures: Max erasures setting that was used when storing the file
+    :param file_size: The original data size. 
+    :param data_req_socket: A ZMQ SUB socket to request chunks from the storage nodes
+    :param response_socket: A ZMQ PULL socket where the storage nodes respond.
+    :return: A list of the random generated chunk names, e.g. (c1,c2), (c3,c4)
+    """
+
+    subscriber_address = 'tcp://*:5589'
+
+    context = zmq.Context()
+
+    # Publisher socket for data request broadcast
+    data_req_socket_rs = context.socket(zmq.PUB)
+    data_req_socket_rs.bind(subscriber_address)
+
+
+    time.sleep(1)
+    
+    # We need 4-max_erasures fragments to reconstruct the file, select this many 
+    # by randomly removing 'max_erasures' elements from the given chunk names. 
+    fragnames = copy.deepcopy(coded_fragments)
+    for i in range(max_erasures):
+        fragnames.remove(random.choice(fragnames))
+    
+    # Request the coded fragments in parallel
+    for name in fragnames:
+        task = messages_pb2.getdata_request()
+        header = messages_pb2.header()
+        header.request_type = messages_pb2.MESSAGE_DECODE
+        task.filename = name
+        print(name)
+        data_req_socket_rs.send_multipart(
+            [
+                b"Hello",
+                header.SerializeToString(),
+                task.SerializeToString()
+            ])
+
+    zmq_socket = context.socket(zmq.PULL)
+    zmq_socket.bind("tcp://*:5591")
+
+    poller = zmq.Poller()
+    poller.register(zmq_socket, zmq.POLLIN)
+
+    # Receive all chunks and insert them into the symbols array
+    symbols = []
+    while(len(symbols) < max_erasures):
+        socks = dict(poller.poll())
+
+        if socks.get(zmq_socket) == zmq.POLLIN:
+            print("Received polling")
+            try:
+                result = zmq_socket.recv_multipart(flags=zmq.NOBLOCK)
+                symbols.append({
+                "chunkname": result[0].decode('utf-8'),
+                "data": bytearray(result[1])
+                })
+            except zmq.EAGAIN as e:
+                pass
+            empty_queue()
+  
+
+    print("All coded fragments received successfully")
+
+    # Reconstruct the original file data
+
+    file_data = decode_file(symbols)
+
+    return file_data[:file_size]
+
+
 
 MAX_ERASURES = 2
 
@@ -70,7 +211,7 @@ Sender_recieve_socket.connect(Sender_recieve_address)
 
 rs_push_socket = context.socket(zmq.PUSH) # Socket for Reed-Solomon - send out to other nodes
 
-#Bind own puplish
+#Bind own publish
 rs_push_socket.bind(f'tcp://*:556{id}')
 
 #Listen on multible 
@@ -104,7 +245,6 @@ while True:
             header.ParseFromString(msg[0])
 
             if header.request_type == messages_pb2.MESSAGE_ENCODE:
-                #print(msg[2])
                 task = messages_pb2.storedata_request()
                 task.ParseFromString(msg[1])
                 
@@ -113,35 +253,10 @@ while True:
 
                 data = msg[2]
 
-                #logging.info(f'Filename: {filename} Size: {len(data)}')
-
                 with open(os.path.join('./', data_folder, filename), 'wb') as f:
                     f.write(data)
 
                 print(f'{id}: saved the file')
-            elif header.request_type == messages_pb2.MESSAGE_DECODE:
-                print("Recieved decode request from other node")
-                task = messages_pb2.getdata_request()
-                task.ParseFromString(msg[1])
-
-                print("Finished parsing from string")
-                filename = task.filename
-                filename += '.bin'
-
-                header = messages_pb2.header()
-                header.request_type = messages_pb2.MESSAGE_DECODE
-                
-                try:
-                    with open(os.path.join(data_folder, filename), 'rb') as f:
-                        rs_push_socket.send_multipart([
-                            header.SerializeToString(),
-                            bytes(filename, 'utf-8'), 
-                            f.read(),
-                            ])
-                        print("Sending respons")
-                except FileNotFoundError:
-                    print("File not found with name:" + filename )
-                    pass
 
     if sub_test in socks:
         msg = sub_test.recv_multipart()
@@ -176,13 +291,16 @@ while True:
             print("recieved decode msg")
             task = messages_pb2.getdataErasure_request()
             task.ParseFromString(msg[2])
-            #print(json.loads(task.coded_fragments))
-            file_data = reedsolomonModified.get_file(
-                json.loads(task.coded_fragments),
-                task.max_erasures,
-                task.file_size
-                )
 
+            pool = ThreadPool(processes=1)
+
+            async_result = pool.apply_async(get_file, args=(json.loads(task.coded_fragments), task.max_erasures, task.file_size,))
+            pool.close()
+
+            pool.join()
+            
+            file_data = async_result.get()
+           
             print("Received file from decoding")
             sender_ctrl.send(file_data)
 
@@ -208,8 +326,6 @@ while True:
 
 
             respons_filename += '.bin'
-            #logging.info(f'Filename: {filename} Size: {len(data)}')
-
             
             with open(os.path.join('./', data_folder, respons_filename), 'wb') as f:
                 f.write(respons_data)
@@ -227,5 +343,5 @@ while True:
                 json.dumps({'fragment_names': fragment_names})
                 )
 
-           
+
 
